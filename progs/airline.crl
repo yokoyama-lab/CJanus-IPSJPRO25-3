@@ -1,0 +1,53 @@
+begin main
+set #seat M[0]
+set #agent1 M[1]
+set #agent2 M[2]
+$tmp0 += 3
+seat += tmp0
+$tmp0 -= 3
+set $agent@0 agent1
+set $agent@1 agent2
+call sell, sell
+unset $agent@1 agent2
+unset $agent@0 agent1
+end main
+begin sell
+lock agent
+$tmp1 += agent
+$tmp2 += 0
+$tmp3 += tmp1 == tmp2
+-> l0
+l0;l4 <- tmp3
+$tmp3 -= tmp1 == tmp2
+$tmp2 -= 0
+$tmp1 -= agent
+unlock agent
+-> l1
+l3 <-
+$tmp8 -= tmp6 <= tmp7
+$tmp7 -= 0
+$tmp6 -= seat
+unlock seat
+$tmp4 += 1
+seat -= tmp4
+$tmp4 -= 1
+$tmp5 += 1
+agent += tmp5
+$tmp5 -= 1
+lock agent
+$tmp1 += agent
+$tmp2 += 0
+$tmp3 += tmp1 == tmp2
+-> l4
+l1 <-
+lock seat
+$tmp6 += seat
+$tmp7 += 0
+$tmp8 += tmp6 <= tmp7
+tmp8 -> l2;l3
+l2 <-
+$tmp8 -= tmp6 <= tmp7
+$tmp7 -= 0
+$tmp6 -= seat
+unlock seat
+end sell

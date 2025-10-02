@@ -1,0 +1,382 @@
+begin main
+set #p M[0]
+set #max M[100]
+set #maxrt M[101]
+set #plock M[102]
+$tmp0 += 100
+max += tmp0
+$tmp0 -= 100
+$tmp1 += 10
+maxrt += tmp1
+$tmp1 -= 10
+push
+$tmp2 += 2
+$k += tmp2
+$tmp2 -= 2
+set $k@0 k
+call sieve
+unset $k@0 k
+$tmp3 += 2
+$k -= tmp3
+$tmp3 -= 2
+pop
+end main
+begin sieve
+lock maxrt, k
+$tmp4 += maxrt
+$tmp5 += k
+$tmp6 += tmp4 > tmp5
+tmp6 -> l0;l1
+l0 <-
+$tmp6 -= tmp4 > tmp5
+$tmp5 -= k
+$tmp4 -= maxrt
+unlock maxrt, k
+lock k, p
+$tmp7 += k
+$tmp8 += p[tmp7]
+$tmp9 += 0
+$tmp10 += tmp8 == tmp9
+tmp10 -> l4;l5
+l4 <-
+$tmp10 -= tmp8 == tmp9
+$tmp9 -= 0
+$tmp8 -= p[tmp7]
+$tmp7 -= k
+unlock k, p
+push
+lock k
+$tmp11 += k
+$n += tmp11
+$tmp11 -= k
+unlock k
+lock n, k
+$tmp12 += n
+$tmp13 += k
+$tmp14 += tmp12 == tmp13
+-> l8
+l8;l12 <- tmp14
+$tmp14 -= tmp12 == tmp13
+$tmp13 -= k
+$tmp12 -= n
+unlock n, k
+lock k
+$tmp15 += k
+n += tmp15
+$tmp15 -= k
+unlock k
+-> l9
+l11 <-
+$tmp36 -= tmp34 >= tmp35
+$tmp35 -= maxrt
+$tmp34 -= n
+unlock n, maxrt
+V plock
+push
+lock n, p, maxrt
+$tmp16 += n
+$tmp17 += p[tmp16]
+$tmp18 += maxrt
+$tmp19 += 1
+$tmp20 += tmp18 - tmp19
+$tmp21 += tmp17 * tmp20
+$t += tmp21
+$tmp21 -= tmp17 * tmp20
+$tmp20 -= tmp18 - tmp19
+$tmp19 -= 1
+$tmp18 -= maxrt
+$tmp17 -= p[tmp16]
+$tmp16 -= n
+unlock n, p, maxrt
+lock n, t
+$tmp22 += n
+$tmp23 += t
+p[tmp22] += tmp23
+$tmp23 -= t
+$tmp22 -= n
+unlock n, t
+lock n, p, maxrt
+$tmp24 += n
+$tmp25 += p[tmp24]
+$tmp26 += maxrt
+$tmp27 += 1
+$tmp28 += tmp26 - tmp27
+$tmp29 += tmp25 * tmp28
+$tmp30 += maxrt
+$tmp31 += tmp29 / tmp30
+$t -= tmp31
+$tmp31 -= tmp29 / tmp30
+$tmp30 -= maxrt
+$tmp29 -= tmp25 * tmp28
+$tmp28 -= tmp26 - tmp27
+$tmp27 -= 1
+$tmp26 -= maxrt
+$tmp25 -= p[tmp24]
+$tmp24 -= n
+unlock n, p, maxrt
+pop
+lock n, k
+$tmp32 += n
+$tmp33 += k
+p[tmp32] += tmp33
+$tmp33 -= k
+$tmp32 -= n
+unlock n, k
+P plock
+lock n, k
+$tmp12 += n
+$tmp13 += k
+$tmp14 += tmp12 == tmp13
+-> l12
+l9 <-
+lock n, maxrt
+$tmp34 += n
+$tmp35 += maxrt
+$tmp36 += tmp34 >= tmp35
+tmp36 -> l10;l11
+l10 <-
+$tmp36 -= tmp34 >= tmp35
+$tmp35 -= maxrt
+$tmp34 -= n
+unlock n, maxrt
+set $k@0 k
+set $g@0 n
+set $k@1 k
+call dosieve, nextsieve
+unset $k@1 k
+unset $g@0 n
+unset $k@0 k
+lock maxrt, k
+$tmp37 += maxrt
+$tmp38 += 1
+$tmp39 += tmp37 - tmp38
+$tmp40 += k
+$tmp41 += tmp39 / tmp40
+$tmp42 += k
+$tmp43 += tmp41 * tmp42
+$tmp44 += k
+$tmp45 += tmp43 + tmp44
+$n -= tmp45
+$tmp45 -= tmp43 + tmp44
+$tmp44 -= k
+$tmp43 -= tmp41 * tmp42
+$tmp42 -= k
+$tmp41 -= tmp39 / tmp40
+$tmp40 -= k
+$tmp39 -= tmp37 - tmp38
+$tmp38 -= 1
+$tmp37 -= maxrt
+unlock maxrt, k
+pop
+lock k, p
+$tmp52 += k
+$tmp53 += p[tmp52]
+$tmp54 += 0
+$tmp55 += tmp53 == tmp54
+-> l6
+l5 <-
+$tmp10 -= tmp8 == tmp9
+$tmp9 -= 0
+$tmp8 -= p[tmp7]
+$tmp7 -= k
+unlock k, p
+push
+lock k
+$tmp46 += k
+$tmp47 += 1
+$tmp48 += tmp46 + tmp47
+$nk += tmp48
+$tmp48 -= tmp46 + tmp47
+$tmp47 -= 1
+$tmp46 -= k
+unlock k
+set $k@0 nk
+call sieve
+unset $k@0 nk
+lock k
+$tmp49 += k
+$tmp50 += 1
+$tmp51 += tmp49 + tmp50
+$nk -= tmp51
+$tmp51 -= tmp49 + tmp50
+$tmp50 -= 1
+$tmp49 -= k
+unlock k
+pop
+lock k, p
+$tmp52 += k
+$tmp53 += p[tmp52]
+$tmp54 += 0
+$tmp55 += tmp53 == tmp54
+-> l7
+l6;l7 <- tmp55
+$tmp55 -= tmp53 == tmp54
+$tmp54 -= 0
+$tmp53 -= p[tmp52]
+$tmp52 -= k
+unlock k, p
+lock maxrt, k
+$tmp56 += maxrt
+$tmp57 += k
+$tmp58 += tmp56 > tmp57
+-> l2
+l1 <-
+$tmp6 -= tmp4 > tmp5
+$tmp5 -= k
+$tmp4 -= maxrt
+unlock maxrt, k
+lock maxrt, k
+$tmp56 += maxrt
+$tmp57 += k
+$tmp58 += tmp56 > tmp57
+-> l3
+l2;l3 <- tmp58
+$tmp58 -= tmp56 > tmp57
+$tmp57 -= k
+$tmp56 -= maxrt
+unlock maxrt, k
+end sieve
+begin nextsieve
+push
+lock k
+$tmp59 += k
+$tmp60 += 1
+$tmp61 += tmp59 + tmp60
+$nk += tmp61
+$tmp61 -= tmp59 + tmp60
+$tmp60 -= 1
+$tmp59 -= k
+unlock k
+set $k@0 nk
+call sieve
+unset $k@0 nk
+lock k
+$tmp62 += k
+$tmp63 += 1
+$tmp64 += tmp62 + tmp63
+$nk -= tmp64
+$tmp64 -= tmp62 + tmp63
+$tmp63 -= 1
+$tmp62 -= k
+unlock k
+pop
+end nextsieve
+begin dosieve
+push
+lock g
+$tmp65 += g
+$n += tmp65
+$tmp65 -= g
+unlock g
+lock n, g
+$tmp66 += n
+$tmp67 += g
+$tmp68 += tmp66 == tmp67
+-> l13
+l13;l17 <- tmp68
+$tmp68 -= tmp66 == tmp67
+$tmp67 -= g
+$tmp66 -= n
+unlock n, g
+lock k
+$tmp69 += k
+n += tmp69
+$tmp69 -= k
+unlock k
+-> l14
+l16 <-
+$tmp90 -= tmp88 >= tmp89
+$tmp89 -= max
+$tmp88 -= n
+unlock n, max
+V plock
+push
+lock n, p, maxrt
+$tmp70 += n
+$tmp71 += p[tmp70]
+$tmp72 += maxrt
+$tmp73 += 1
+$tmp74 += tmp72 - tmp73
+$tmp75 += tmp71 * tmp74
+$t += tmp75
+$tmp75 -= tmp71 * tmp74
+$tmp74 -= tmp72 - tmp73
+$tmp73 -= 1
+$tmp72 -= maxrt
+$tmp71 -= p[tmp70]
+$tmp70 -= n
+unlock n, p, maxrt
+lock n, t
+$tmp76 += n
+$tmp77 += t
+p[tmp76] += tmp77
+$tmp77 -= t
+$tmp76 -= n
+unlock n, t
+lock n, p, maxrt
+$tmp78 += n
+$tmp79 += p[tmp78]
+$tmp80 += maxrt
+$tmp81 += 1
+$tmp82 += tmp80 - tmp81
+$tmp83 += tmp79 * tmp82
+$tmp84 += maxrt
+$tmp85 += tmp83 / tmp84
+$t -= tmp85
+$tmp85 -= tmp83 / tmp84
+$tmp84 -= maxrt
+$tmp83 -= tmp79 * tmp82
+$tmp82 -= tmp80 - tmp81
+$tmp81 -= 1
+$tmp80 -= maxrt
+$tmp79 -= p[tmp78]
+$tmp78 -= n
+unlock n, p, maxrt
+pop
+lock n, k
+$tmp86 += n
+$tmp87 += k
+p[tmp86] += tmp87
+$tmp87 -= k
+$tmp86 -= n
+unlock n, k
+P plock
+lock n, g
+$tmp66 += n
+$tmp67 += g
+$tmp68 += tmp66 == tmp67
+-> l17
+l14 <-
+lock n, max
+$tmp88 += n
+$tmp89 += max
+$tmp90 += tmp88 >= tmp89
+tmp90 -> l15;l16
+l15 <-
+$tmp90 -= tmp88 >= tmp89
+$tmp89 -= max
+$tmp88 -= n
+unlock n, max
+lock max, k
+$tmp91 += max
+$tmp92 += 1
+$tmp93 += tmp91 - tmp92
+$tmp94 += k
+$tmp95 += tmp93 / tmp94
+$tmp96 += k
+$tmp97 += tmp95 * tmp96
+$tmp98 += k
+$tmp99 += tmp97 + tmp98
+$n -= tmp99
+$tmp99 -= tmp97 + tmp98
+$tmp98 -= k
+$tmp97 -= tmp95 * tmp96
+$tmp96 -= k
+$tmp95 -= tmp93 / tmp94
+$tmp94 -= k
+$tmp93 -= tmp91 - tmp92
+$tmp92 -= 1
+$tmp91 -= max
+unlock max, k
+pop
+end dosieve
