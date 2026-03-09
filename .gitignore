@@ -1,0 +1,16 @@
+# Compiled binaries
+cjanus-compiler
+cjanus-runtime
+
+# Trace and profile output
+*.out
+*.prof
+
+# Benchmark results (generated locally)
+results/
+
+# Editor files
+*.swp
+*~
+.idea/
+.vscode/

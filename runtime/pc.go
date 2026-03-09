@@ -11,17 +11,19 @@ import (
 )
 
 type pc struct {
-	head       int   //LineNo of next instruction to be run
-	pc         int   //Ctr that increases by 1 every exec
-	pid        int   //Display pid, unique integer with 0 begin root process
-	originpid  int   //pid of the caller, focus will fall back to that once terminated
-	executing  bool
-	nest       int                    //counter of how much indent is nested
-	localtable map[string][]localaddr //last one is newest
-	pnode *dagpnode
-	dfunc	[]func()
-	lastlabel string
-	children []*pc
+	head      int  // line number of next instruction to run
+	pc        int  // counter that increases by 1 every exec
+	pid       int  // unique process ID (0 = root)
+	originpid int  // caller's PID (focus falls back on termination)
+	executing bool // true while a block is being executed
+
+	nest       int                    // indentation nesting depth
+	localtable map[string][]localaddr // local variable bindings (last = newest)
+
+	pnode     *dagpnode // DAG process node
+	dfunc     []func()  // deferred functions (node unlocks)
+	lastlabel string    // last branch label (for assertion checks)
+	children  []*pc     // child processes spawned by call
 }
 
 type localaddr struct {
@@ -29,75 +31,76 @@ type localaddr struct {
 	nest int
 }
 
+// History constants for special local address nesting values
 const (
-	HIST_COLON = -1
-	HIST_AT    = -2
+	histColon = -1
+	histAt    = -2
 )
-
-func (p *pc) indent() {
-	p.nest += 1
-}
-
-func (p *pc) unindent() {
-	p.nest -= 1
-}
 
 type execresult int
 
 const (
-	EXR_NORMAL execresult = iota
-	EXR_EOF
-	EXR_PROCEND
+	exrNormal  execresult = iota // execution completed normally
+	exrEOF                       // reached end of main
+	exrProcEnd                   // non-main process terminated
 )
 
 func (p *pc) StringfyPid() string {
 	return strconv.Itoa(p.pid)
 }
 
-func (p *pc) Propagate(f func(*pc)){
+func (p *pc) indent() {
+	p.nest++
+}
+
+func (p *pc) unindent() {
+	p.nest--
+}
+
+func (p *pc) getBlock() string {
+	return ":" + strconv.Itoa(p.nest)
+}
+
+// Propagate applies f to this pc and all its descendants.
+func (p *pc) Propagate(f func(*pc)) {
 	f(p)
-	for _,c := range p.children{
+	for _, c := range p.children {
 		c.Propagate(f)
 	}
 }
 
+// execute is the main execution loop for a process.
+// Returns: 0=suspended, 1=EOF, 2=terminated
 func (p *pc) execute(r *runtime) int {
-	//0 means suspended
-	//1 means reached EOF
-	//2 means terminated
 	for {
 		select {
 		case rev := <-r.runonce:
-			//run once mode
+			// Step-by-step mode
 			if !rev {
 				p.AddNextNodeFwd()
 			}
 			if !p.executing {
-				//check if dag allows it to run, if yes then execute, send rundone
 				ret := p.executeBlock(r, rev)
 				r.rundone <- true
-				if SLOW_DEBUG != 0 {
-					time.Sleep(SLOW_DEBUG)
+				if cfg.SlowDebug != 0 {
+					time.Sleep(cfg.SlowDebug)
 				}
 				switch ret {
-				case EXR_EOF:
-					//EOF
+				case exrEOF:
 					util.Unclog(r.runclose)
 					r.runclose <- true
 					return 1
-				case EXR_PROCEND:
-					//End of non main proc
+				case exrProcEnd:
 					return 2
 				}
 			} else {
-				//otherwise broadcast msg to another, block until rundone, which will also be broadcasted
 				r.runonce <- rev
 				<-r.rundoner
 				r.rundoner <- true
 			}
+
 		case rev := <-r.runever:
-			//run forever mode
-			//broadcast run msg
+			// Continuous execution mode
 			r.runever <- rev
 			for {
 				select {
@@ -110,10 +113,8 @@ func (p *pc) execute(r *runtime) int {
 						p.pc--
 						p.pnode = p.pnode.prev
 					}
-					//check if dag allows it to run, if yes then execute, send dagupdate if modified dag
 					ret := p.executeBlock(r, rev)
-					//TODO add if dag actually does update check
-					util.Unclog(r.dagupdate) // unclogs buffer so that it will not be blocked
+					util.Unclog(r.dagupdate)
 					if !rev {
 						p.AddNextNodeFwd()
 						if p.pnode.wt != nil {
@@ -122,7 +123,7 @@ func (p *pc) execute(r *runtime) int {
 						p.pc++
 						p.pnode = p.pnode.next
 					} else {
-						if p.pnode.wt != nil{
+						if p.pnode.wt != nil {
 							p.pnode.wt.head.tail = p.pnode.wt.prev
 						}
 					}
@@ -130,23 +131,21 @@ func (p *pc) execute(r *runtime) int {
 						f()
 					}
 					r.dagupdate <- true
-					if SLOW_DEBUG != 0 {
-						time.Sleep(SLOW_DEBUG)
+					if cfg.SlowDebug != 0 {
+						time.Sleep(cfg.SlowDebug)
 					}
-					//unlock all nodes
 					switch ret {
-					case EXR_EOF:
-						//EOF, suspend the execution
+					case exrEOF:
 						util.Unclog(r.runclose)
 						r.runclose <- true
 						return 1
-					case EXR_PROCEND:
-						//End of non main proc
+					case exrProcEnd:
 						r.termproc <- procchange{p.pid, p.originpid}
 						return 2
 					}
 				}
 			}
+
 		case <-r.runclose:
 			r.runclose <- true
 			return 0
@@ -154,35 +153,43 @@ func (p *pc) execute(r *runtime) int {
 	}
 }
 
+// getinst matches an instruction string against the instruction set
+// and returns the appropriate prepare/execute function pair.
 func (p *pc) getinst(r *runtime, inst string, rev bool) (func() *rdwtinfo, func() int) {
 	for _, i := range r.instset {
 		match := i.re.FindStringSubmatch(inst)
 		if match != nil {
 			if rev {
 				return i.bwd(r, p, match)
-			} else {
-				return i.fwd(r, p, match)
 			}
+			return i.fwd(r, p, match)
 		}
 	}
-	fmt.Printf("Instruction unknown [%s]\n", inst)
-	panic("Instruction unknown")
+	panic(fmt.Sprintf("unknown instruction: [%s]", inst))
 }
 
-type rdwtinfo struct{
-	wt []addr
-	rd []addr
-	v []addr
-	p []addr
-	lock []addr
-	unlock []addr
+// rdwtinfo tracks read/write/lock dependencies for a basic block.
+type rdwtinfo struct {
+	wt     []addr // write targets
+	rd     []addr // read sources
+	v      []addr // V (signal) semaphore targets
+	p      []addr // P (wait) semaphore targets
+	lock   []addr // addresses to lock
+	unlock []addr // addresses to unlock
 }
 
-func NewRdWtInfo() *rdwtinfo{
-	return &rdwtinfo{make([]addr, 0),make([]addr, 0),make([]addr, 0),make([]addr, 0),make([]addr, 0),make([]addr, 0)}
+func NewRdWtInfo() *rdwtinfo {
+	return &rdwtinfo{
+		wt:     make([]addr, 0),
+		rd:     make([]addr, 0),
+		v:      make([]addr, 0),
+		p:      make([]addr, 0),
+		lock:   make([]addr, 0),
+		unlock: make([]addr, 0),
+	}
 }
 
-func (i *rdwtinfo) Add(j *rdwtinfo){
+func (i *rdwtinfo) Add(j *rdwtinfo) {
 	i.wt = append(i.wt, j.wt...)
 	i.rd = append(i.rd, j.rd...)
 	i.v = append(i.v, j.v...)
@@ -191,89 +198,99 @@ func (i *rdwtinfo) Add(j *rdwtinfo){
 	i.unlock = append(i.unlock, j.unlock...)
 }
 
-func (i *rdwtinfo) Compact(){
-	i.wt = slices.CompactFunc(i.wt,func(a addr, b addr) bool {return a.EqualsMem(b)})
-	i.v = slices.CompactFunc(i.v,func(a addr, b addr) bool {return a.EqualsMem(b)})
-	i.p = slices.CompactFunc(i.p,func(a addr, b addr) bool {return a.EqualsMem(b)})
-	i.lock = slices.CompactFunc(i.lock,func(a addr, b addr) bool {return a.EqualsMem(b)})
-	i.unlock = slices.CompactFunc(i.unlock,func(a addr, b addr) bool {return a.EqualsMem(b)})
-	i.rd = slices.CompactFunc(i.rd,func(a addr, b addr) bool {return a.EqualsMem(b)})
-	i.rd = slices.DeleteFunc(i.rd,func(a addr) bool {return slices.ContainsFunc(i.wt,func(b addr) bool {return a.EqualsMem(b)})})
+// Compact removes duplicate entries and eliminates reads that are also writes.
+func (i *rdwtinfo) Compact() {
+	addrEq := func(a addr, b addr) bool { return a.EqualsMem(b) }
+	i.wt = slices.CompactFunc(i.wt, addrEq)
+	i.v = slices.CompactFunc(i.v, addrEq)
+	i.p = slices.CompactFunc(i.p, addrEq)
+	i.lock = slices.CompactFunc(i.lock, addrEq)
+	i.unlock = slices.CompactFunc(i.unlock, addrEq)
+	i.rd = slices.CompactFunc(i.rd, addrEq)
+	// Remove reads that are also writes
+	i.rd = slices.DeleteFunc(i.rd, func(a addr) bool {
+		return slices.ContainsFunc(i.wt, func(b addr) bool { return a.EqualsMem(b) })
+	})
 }
 
-func (p *pc) tryRunnable(r *runtime, rev bool, rdwts *rdwtinfo, failctr int) (bool, func()){
-	//returns function to do dag update
+// tryRunnable checks if the process can execute and acquires necessary locks.
+// Returns (success, cleanup_func). Uses panic/recover for DAG lock contention.
+func (p *pc) tryRunnable(r *runtime, rev bool, rdwts *rdwtinfo, failctr int) (bool, func()) {
 	defer func() {
-		if r := recover(); r != nil{
-			switch r.(type) {
+		if rec := recover(); rec != nil {
+			switch rec.(type) {
 			case daglockerror, dagrunnableerror, pvrunnableerror, varlockrunnableerror:
-				if DAGLOCK_DEBUG {
-					fmt.Printf("Check fail, Recover started by proc (%d,%d)\n",p.pid,p.pc)
+				if cfg.DAGLockDebug {
+					fmt.Printf("Check fail, recover started by proc (%d,%d)\n", p.pid, p.pc)
 				}
 				for _, f := range p.dfunc {
 					f()
 				}
-				if DAGLOCK_DEBUG {
-					fmt.Printf("Recover ended by proc (%d,%d)\n",p.pid,p.pc)
+				if cfg.DAGLockDebug {
+					fmt.Printf("Recover ended by proc (%d,%d)\n", p.pid, p.pc)
 				}
-				switch r.(type) {
+				switch rec.(type) {
 				case dagrunnableerror, varlockrunnableerror:
 					time.Sleep(time.Duration(failctr) * time.Microsecond)
 				case pvrunnableerror:
 					time.Sleep(time.Duration(5*failctr) * time.Microsecond)
 				}
 			default:
-				panic(r)
+				panic(rec)
 			}
 		}
 	}()
-	df := make([]func(),0)
-	if DAGLOCK_DEBUG {
-		fmt.Printf("Runnable check started by proc (%d,%d)\n",p.pid,p.pc)
+
+	df := make([]func(), 0)
+	if cfg.DAGLockDebug {
+		fmt.Printf("Runnable check started by proc (%d,%d)\n", p.pid, p.pc)
 	}
 	p.AssertRunnable(rev)
+
 	if !rev {
-		for _,v := range rdwts.wt{
-			df = append(df, r.dag.AddWEdge(v,p))
+		for _, v := range rdwts.wt {
+			df = append(df, r.dag.AddWEdge(v, p))
 		}
-		for _,v := range rdwts.rd{
-			df = append(df, r.dag.AddREdge(v,p))
+		for _, v := range rdwts.rd {
+			df = append(df, r.dag.AddREdge(v, p))
 		}
 	}
-	for _,v := range rdwts.wt{
-		r.WLockAddr(p,v)
+	for _, v := range rdwts.wt {
+		r.WLockAddr(p, v)
 	}
-	for _,v := range rdwts.v{
-		r.TryV(p,v)
+	for _, v := range rdwts.v {
+		r.TryV(p, v)
 	}
-	for _,v := range rdwts.p{
-		r.TryP(p,v)
+	for _, v := range rdwts.p {
+		r.TryP(p, v)
 	}
-	for _,v := range rdwts.lock{
-		r.LockAddr(p,v)
+	for _, v := range rdwts.lock {
+		r.LockAddr(p, v)
 	}
-	for _,v := range rdwts.unlock{
-		df = append(df, func() {r.UnlockAddr(p,v)})
+	for _, v := range rdwts.unlock {
+		df = append(df, func() { r.UnlockAddr(p, v) })
 	}
-	if DAGLOCK_DEBUG {
-		fmt.Printf("Runnable check passed by proc (%d,%d)\n",p.pid,p.pc)
+
+	if cfg.DAGLockDebug {
+		fmt.Printf("Runnable check passed by proc (%d,%d)\n", p.pid, p.pc)
 	}
 	return true, func() {
-		for _,n := range df{
+		for _, n := range df {
 			n()
 		}
 	}
 }
 
-func (p *pc) waitRunnable(r *runtime, rev bool, rdwts *rdwtinfo) func(){
+// waitRunnable spins until the process can execute, with backoff.
+func (p *pc) waitRunnable(r *runtime, rev bool, rdwts *rdwtinfo) func() {
 	failctr := 0
 	for {
-		select{
+		select {
 		case <-r.runclose:
 			r.runclose <- true
 			return func() {}
 		default:
-			s,f := p.tryRunnable(r,rev,rdwts,failctr)
+			s, f := p.tryRunnable(r, rev, rdwts, failctr)
 			if s {
 				return f
 			}
@@ -283,21 +300,25 @@ func (p *pc) waitRunnable(r *runtime, rev bool, rdwts *rdwtinfo) func(){
 	}
 }
 
+// slowParseDelay adds an artificial delay to simulate slower parsing.
+const slowParseIterations = 500000
+
+// executeBlock executes a basic block (3 instructions) atomically.
 func (p *pc) executeBlock(r *runtime, rev bool) execresult {
-	//We made sure that block that is executed is next/previous 3 lines, by adding entry/exit that doesn't exist in source
-	//head points to next instruction to run in fwd, instruction just ran in bwd
 	p.executing = true
 	defer func() {
 		p.executing = false
 	}()
+
 	inst := make([]string, 0, 3)
 	insf := make([]func() *rdwtinfo, 0, 3)
 	insa := make([]func() int, 0, 3)
-	rt := EXR_NORMAL
+	rt := exrNormal
+
 	if rev {
 		if p.head-2 < 0 {
 			p.head = 0
-			return EXR_EOF
+			return exrEOF
 		}
 		for i := range 3 {
 			inst = append(inst, (*r.file)[p.head-i-1])
@@ -306,9 +327,9 @@ func (p *pc) executeBlock(r *runtime, rev bool) execresult {
 			insa = append(insa, a)
 		}
 	} else {
-		if len(*(r.file)) <= p.head {
-			p.head = len(*(r.file)) - 1
-			return EXR_EOF
+		if len(*r.file) <= p.head {
+			p.head = len(*r.file) - 1
+			return exrEOF
 		}
 		for i := range 3 {
 			inst = append(inst, (*r.file)[p.head+i])
@@ -318,66 +339,64 @@ func (p *pc) executeBlock(r *runtime, rev bool) execresult {
 		}
 	}
 
+	// Collect read/write info from all 3 instructions
 	rdwtall := NewRdWtInfo()
 	for i := range 3 {
-		f := insf[i]
-		rdwtall.Add( f() )
+		rdwtall.Add(insf[i]())
 	}
 	rdwtall.Compact()
 
-	dagf := p.waitRunnable(r,rev,rdwtall)
+	dagf := p.waitRunnable(r, rev, rdwtall)
 
-	if SLOW_PARSE {
+	if cfg.SlowParse {
 		m := 0
-		for m <= 500000 {
+		for m <= slowParseIterations {
 			m++
 		}
 	}
 
-	if !STRICT {
+	if !cfg.Strict {
 		r.skiplock++
 	}
-L1:
+
 	for i := range 3 {
-		f := insa[i]
-		ret := f()
+		ret := insa[i]()
 		switch ret {
-		case 0:
+		case retNormal:
 			if rev {
 				p.head--
 			} else {
 				p.head++
 			}
-			continue
-		case 1:
+		case retEOF:
 			if rev {
 				p.head--
 			} else {
 				p.head++
 			}
-			rt = EXR_EOF
-			break L1
-		case 2:
+			rt = exrEOF
+			goto done
+		case retProcEnd:
 			if rev {
 				p.head--
 			} else {
 				p.head++
 			}
-			rt = EXR_PROCEND
-			break L1
-		case 3:
-			continue
-		case 4:
-			continue
+			rt = exrProcEnd
+			goto done
+		case retRespawn, retBranch:
+			// Head already updated or no update needed
 		}
 	}
-	if !SUPPRESSOUTPUT {
+
+done:
+	if !cfg.SuppressOutput {
 		fmt.Print("P", p.pid, ",", p.pc, ">\n", strings.Join(inst, " "), "\n")
 	}
 
 	dagf()
 
-	if EXEC_DEBUG {
+	if cfg.ExecDebug {
 		if !rev {
 			r.exmap[pidandpc{p.pid, p.pc}] = strings.Join(inst, "")
 		} else {
@@ -386,46 +405,11 @@ L1:
 				s += inst[2-i]
 			}
 			if s != r.exmap[pidandpc{p.pid, p.pc}] {
-				panic("Unmatched execution: P" + strconv.Itoa(p.pid) + "," + strconv.Itoa(p.pc) + "\n" +
-					"Expected: \n" + r.exmap[pidandpc{p.pid, p.pc}] +
-					"\nGot: \n" + s)
+				panic("unmatched execution: P" + strconv.Itoa(p.pid) + "," + strconv.Itoa(p.pc) + "\n" +
+					"expected: \n" + r.exmap[pidandpc{p.pid, p.pc}] +
+					"\ngot: \n" + s)
 			}
 		}
 	}
 	return rt
-}
-
-//	type eMutex struct{
-//		sync.Mutex
-//	}
-//
-//	func (m *eMutex) Lock(){
-//		m.Mutex.Lock()
-//		print("Locked mutex\n")
-//	}
-//
-//	func (m *eMutex) Unlock(){
-//		m.Mutex.Unlock()
-//		print("Unlocked mutex\n")
-//	}
-//
-// var exmut *eMutex = &eMutex{}
-
-func (p *pc) getBlock() string {
-	return ":" + strconv.Itoa(p.nest)
-}
-
-func (r *runtime) PrintProc() {
-	// bctr := 0
-	// for _, p := range r.pcs {
-	// 	fmt.Printf("(%d,%d) ", p.pid, p.pc)
-	// 	bctr += p.pc
-	// }
-	fmt.Print("\n")
-}
-
-func checkerr(e error) {
-	if e != nil {
-		panic(e)
-	}
 }

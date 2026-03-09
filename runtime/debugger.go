@@ -10,194 +10,133 @@ import (
 	"os/signal"
 	"regexp"
 	"syscall"
-	"time"
 
 	"github.com/mkuroda13/ConcurrentJanus/util"
 )
 
-// if not 0, add sleep of x microsecond after every instruction
-var SLOW_DEBUG time.Duration = 0
-
-// if true, try to group same process together in dag display
-var SEQ_DAG = false
-
-// if true, display dag update information to stdout
-var DAG_DEBUG = false
-
-// if true, display variable read/write information to stdout
-var VAR_DEBUG = true
-
-// if true, display block updates to stdout
-var BLOCK_DEBUG = true
-
-// if true, store and compare fwd and bwd execution input and match them
-var EXEC_DEBUG = true
-
-// if true, display which process got semaphore with V/P operation
-var SEM_DEBUG = true
-
-// if true, time the execution
-var TIMING_DEBUG = false
-
-// enables sequential mode
-var SEQUENTIAL = false
-
-// stop printing executed block
-var SUPPRESSOUTPUT = false
-
-// enable profiling
-var PROFILE = false
-var PROFILE_FILE *os.File
-
-// enable tracing
-var TRACING = false
-var TRACING_FILE *os.File
-
-// Simulate slower paring by adding artificial delay before executing instructions
-var SLOW_PARSE = false
-
-// Strictly follow basic-block-wise atomicity, even if instruction does not modify variables
-var STRICT = false
-
-// do not record dag
-var NODAG = false
-
-// Allow expression of arbitary length
-var EXTEXPR = false
-
-// Display lock/unlock of addresses
-var LOCK_DEBUG = false
-
-// Display lock/unlock of dag nodes
-var DAGLOCK_DEBUG = false
-
-//Limit Max CPU usage
-var MAXPROCS = 0
-
-//Auto mode
-var AUTO = false
-var AUTO_PROGRESS = 0 //0 = forward running, 1 = backward, 2 = replay
-
 func main() {
-	VERBOSE := true
+	verbose := true
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: %s [args] file\n", os.Args[0])
 		flag.PrintDefaults()
 	}
-	flag.DurationVar(&SLOW_DEBUG, "s", 0, "Add sleep of specified amount after every instruction. Higher values will result in more alternating execution order.")
-	flag.BoolVar(&DAG_DEBUG, "dd", false, "Display Annotation DAG updates to stdout")
-	flag.BoolVar(&VAR_DEBUG, "dv", false, "Display variable reads/writes to stdout")
-	flag.BoolVar(&BLOCK_DEBUG, "db", false, "Display block changes to stdout")
-	flag.BoolVar(&SEM_DEBUG, "ds", false, "Display semaphore update upon V/P operation to stdout")
-	flag.BoolVar(&LOCK_DEBUG, "dl", false, "Display lock/unlock of addresses to stdout")
-	flag.BoolVar(&DAGLOCK_DEBUG, "da", false, "Display lock/unlock of Annotation DAG's nodes to stdout")
-	flag.BoolVar(&VERBOSE, "v", false, "verbose, will enable -dd, -dv, -db, -ds, -dl, and -e")
-	flag.BoolVar(&EXEC_DEBUG, "e", false, "If enabled, execution will fail if block executed backwards does not match corresponding forward one")
-	flag.BoolVar(&TIMING_DEBUG, "t", false, "If enabled, execution time is measured and displayed when done")
-	flag.BoolVar(&SEQUENTIAL, "seq", false, "If enabled, goroutines, and locks will not be used. Call statement can only be called one at a time, errors otherwise")
-	flag.BoolVar(&SUPPRESSOUTPUT, "silent", false, "Stops printing executed blocks. Will still print message indicating program is finished")
-	flag.BoolVar(&PROFILE, "profile", false, "If enabled, do a CPU profile")
-	flag.BoolVar(&TRACING, "trace", false, "If enabled, do tracing")
-	flag.BoolVar(&NODAG, "nodag", false, "If enabled, does not record annotation DAG")
-	flag.BoolVar(&SLOW_PARSE, "slowparse", false, "Simulate slower parsing by adding artificial delay before executing instructions")
-	flag.BoolVar(&STRICT, "strict", false, "Strictly follow basic-block-wise atomicity, even if instruction does not modify variables")
-	flag.BoolVar(&EXTEXPR, "extexpr", false, "Allow expression of arbitary length")
-	flag.IntVar(&MAXPROCS, "procs", 0, "Set GOMAXPROCS to limit CPU usage")
-	flag.BoolVar(&AUTO, "auto", false, "Automatically go fwd, bwd, replay, then terminate")
+	flag.DurationVar(&cfg.SlowDebug, "s", 0, "Add sleep of specified amount after every instruction")
+	flag.BoolVar(&cfg.DAGDebug, "dd", false, "Display Annotation DAG updates to stdout")
+	flag.BoolVar(&cfg.VarDebug, "dv", false, "Display variable reads/writes to stdout")
+	flag.BoolVar(&cfg.BlockDebug, "db", false, "Display block changes to stdout")
+	flag.BoolVar(&cfg.SemDebug, "ds", false, "Display semaphore update upon V/P operation to stdout")
+	flag.BoolVar(&cfg.LockDebug, "dl", false, "Display lock/unlock of addresses to stdout")
+	flag.BoolVar(&cfg.DAGLockDebug, "da", false, "Display lock/unlock of Annotation DAG's nodes to stdout")
+	flag.BoolVar(&verbose, "v", false, "Verbose: enables -dd, -dv, -db, -ds, -dl, and -e")
+	flag.BoolVar(&cfg.ExecDebug, "e", false, "Fail if backwards execution does not match forward")
+	flag.BoolVar(&cfg.TimingDebug, "t", false, "Measure and display execution time")
+	flag.BoolVar(&cfg.Sequential, "seq", false, "Sequential mode: no goroutines, single call only")
+	flag.BoolVar(&cfg.SuppressOutput, "silent", false, "Stop printing executed blocks")
+	flag.BoolVar(&cfg.Profile, "profile", false, "Enable CPU profiling (output: a.prof)")
+	flag.BoolVar(&cfg.Tracing, "trace", false, "Enable execution tracing (output: trace.out)")
+	flag.BoolVar(&cfg.NoDAG, "nodag", false, "Do not record annotation DAG")
+	flag.BoolVar(&cfg.SlowParse, "slowparse", false, "Simulate slower parsing with artificial delay")
+	flag.BoolVar(&cfg.Strict, "strict", false, "Strictly follow basic-block-wise atomicity")
+	flag.BoolVar(&cfg.ExtExpr, "extexpr", false, "Allow expressions of arbitrary length")
+	flag.IntVar(&cfg.MaxProcs, "procs", 0, "Set GOMAXPROCS to limit CPU usage")
+	flag.BoolVar(&cfg.Auto, "auto", false, "Automatically run forward, backward, replay, then terminate")
 	flag.Parse()
 
-	if VERBOSE {
-		DAG_DEBUG = true
-		VAR_DEBUG = true
-		BLOCK_DEBUG = true
-		EXEC_DEBUG = true
-		SEM_DEBUG = true
-		LOCK_DEBUG = true
-		DAGLOCK_DEBUG = true
+	if verbose {
+		cfg.DAGDebug = true
+		cfg.VarDebug = true
+		cfg.BlockDebug = true
+		cfg.ExecDebug = true
+		cfg.SemDebug = true
+		cfg.LockDebug = true
+		cfg.DAGLockDebug = true
 	}
-	if PROFILE {
+	// Sync generated-code globals from config
+	EXTEXPR = cfg.ExtExpr
+
+	if cfg.Profile {
 		util.SetRuntimeBlockProfileRate(1)
 		util.SetRuntimeMutexProfileRate(1)
 	}
-	if MAXPROCS != 0 {
-		util.SetRuntimeCPU(MAXPROCS)
+	if cfg.MaxProcs != 0 {
+		util.SetRuntimeCPU(cfg.MaxProcs)
 	}
-	debug(flag.Arg(0))
+	runDebugger(flag.Arg(0))
 }
-func debug(filename string) {
-	//open the file, eventually replace this with Open()
+
+func runDebugger(filename string) {
 	file, err := os.Open(filename)
 	checkerr(err)
+
 	f := make([]string, 0)
-	runtime := newRuntime(&f)
+	rt := newRuntime(&f)
 	scanner := bufio.NewScanner(file)
-	//set up regex for -> and <- label statements
+
+	// Regex for -> and <- label statements
 	goreg := regexp.MustCompile(`^[\w\d$.:\[\]+\-*/!<=>&|%]*\s*->\s*([\w\d$.:]+)\s*(?:;\s*([\w\d$.:]+)\s*)?`)
 	comereg := regexp.MustCompile(`^\s*([\w\d$.:]+)\s*(?:;\s*([\w\d$.:]+)\s*)?<-[\w\d$.:\[\]+\-*/!<=>&|%]*`)
-	//set up regex for begin label and end label statements
 	beginreg := regexp.MustCompile(`^begin\s+([\w\d$.:]+)$`)
 	endreg := regexp.MustCompile(`^end\s+([\w\d$.:]+)$`)
-	//set up regex for empty lines
 	empreg := regexp.MustCompile(`^\s*$`)
-	//set up regex for
+
 	lineno := 0
-	//scan each line
 	for scanner.Scan() {
 		t := scanner.Text()
-		//skip empty line
-		if !empreg.MatchString(t) {
-			//if label is found, add them to runtime.labels
-			gom := goreg.FindStringSubmatch(t)
-			com := comereg.FindStringSubmatch(t)
-			if gom != nil {
-				for i := 1; i <= 2; i++ {
-					if len(gom[i]) != 0 {
-						runtime.labels.AddGoto(gom[i], lineno)
-					}
+		if empreg.MatchString(t) {
+			continue
+		}
+
+		gom := goreg.FindStringSubmatch(t)
+		com := comereg.FindStringSubmatch(t)
+		if gom != nil {
+			for i := 1; i <= 2; i++ {
+				if len(gom[i]) != 0 {
+					rt.labels.AddGoto(gom[i], lineno)
 				}
 			}
-			if com != nil {
-				for i := 1; i <= 2; i++ {
-					if len(com[i]) != 0 {
-						runtime.labels.AddComeFrom(com[i], lineno)
-					}
+		}
+		if com != nil {
+			for i := 1; i <= 2; i++ {
+				if len(com[i]) != 0 {
+					rt.labels.AddComeFrom(com[i], lineno)
 				}
 			}
-			//same for begin/end
-			bgm := beginreg.FindStringSubmatch(t)
-			enm := endreg.FindStringSubmatch(t)
-			if bgm != nil {
-				runtime.labels.AddBegin(bgm[1], lineno)
-			}
-			if enm != nil {
-				runtime.labels.AddEnd(enm[1], lineno)
-			}
-			if lineno%3 == 1 && (enm != nil || gom != nil) {
-				f = append(f, "skip")
-				lineno++
-			}
-			if lineno%3 == 2 && enm == nil && gom == nil {
-				//if inst
-				s := runtime.RegisterNewLabel(lineno)
-				f = append(f, "-> "+s, s+" <-")
-				lineno += 2
-			}
-			//append the whole line (regardless of regex) to f
-			f = append(f, t)
+		}
+
+		bgm := beginreg.FindStringSubmatch(t)
+		enm := endreg.FindStringSubmatch(t)
+		if bgm != nil {
+			rt.labels.AddBegin(bgm[1], lineno)
+		}
+		if enm != nil {
+			rt.labels.AddEnd(enm[1], lineno)
+		}
+
+		if lineno%3 == 1 && (enm != nil || gom != nil) {
+			f = append(f, "skip")
 			lineno++
 		}
+		if lineno%3 == 2 && enm == nil && gom == nil {
+			s := rt.RegisterNewLabel(lineno)
+			f = append(f, "-> "+s, s+" <-")
+			lineno += 2
+		}
+
+		f = append(f, t)
+		lineno++
 	}
-	//fmt.Print(f)
-	runtime.initInstset()
+
+	rt.initInstset()
 	debugsym := make(chan string)
 	done := make(chan bool)
 
-	go handlesig(done)
-	go readstdin(debugsym, done)
-	go runtime.debug(debugsym, done)
+	go handleSignals(done)
+	go readStdin(debugsym, done)
+	go rt.debug(debugsym, done)
 	<-done
 }
-func readstdin(debugsym chan<- string, done <-chan bool) {
+
+func readStdin(debugsym chan<- string, done <-chan bool) {
 	in := bufio.NewReader(os.Stdin)
 	for {
 		select {
@@ -211,7 +150,7 @@ func readstdin(debugsym chan<- string, done <-chan bool) {
 	}
 }
 
-func handlesig(done chan bool) {
+func handleSignals(done chan bool) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	for {

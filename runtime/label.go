@@ -2,6 +2,8 @@ package main
 
 import "strconv"
 
+// labels manages the mapping between label names and line numbers
+// for goto, come-from, begin, and end statements.
 type labels struct {
 	gotomap  map[string]int
 	comemap  map[string]int
@@ -11,57 +13,52 @@ type labels struct {
 }
 
 func newLabels() *labels {
-	l := labels{gotomap: make(map[string]int),
+	return &labels{
+		gotomap:  make(map[string]int),
 		comemap:  make(map[string]int),
 		beginmap: make(map[string]int),
-		endmap:   make(map[string]int)}
-	return &l
+		endmap:   make(map[string]int),
+	}
 }
 
-func (labels *labels) GetGoto(labelname string) int {
-	val, ex := labels.gotomap[labelname]
-	if ex {
+func (l *labels) GetGoto(labelname string) int {
+	if val, ex := l.gotomap[labelname]; ex {
 		return val
 	}
-	panic("Label not found")
+	panic("goto label not found: " + labelname)
 }
-func (labels *labels) GetComeFrom(labelname string) int {
-	val, ex := labels.comemap[labelname]
-	if ex {
+
+func (l *labels) GetComeFrom(labelname string) int {
+	if val, ex := l.comemap[labelname]; ex {
 		return val
 	}
-	panic("Label not found")
+	panic("come-from label not found: " + labelname)
 }
-func (labels *labels) GetBegin(labelname string) int {
-	val, ex := labels.beginmap[labelname]
-	if ex {
+
+func (l *labels) GetBegin(labelname string) int {
+	if val, ex := l.beginmap[labelname]; ex {
 		return val
 	}
-	panic("Label not found")
+	panic("begin label not found: " + labelname)
 }
-func (labels *labels) GetEnd(labelname string) int {
-	val, ex := labels.endmap[labelname]
-	if ex {
+
+func (l *labels) GetEnd(labelname string) int {
+	if val, ex := l.endmap[labelname]; ex {
 		return val
 	}
-	panic("Label not found")
+	panic("end label not found: " + labelname)
 }
-func (labels *labels) AddGoto(labelname string, lineno int) {
-	labels.gotomap[labelname] = lineno
-}
-func (labels *labels) AddComeFrom(labelname string, lineno int) {
-	labels.comemap[labelname] = lineno
-}
-func (labels *labels) AddBegin(labelname string, lineno int) {
-	labels.beginmap[labelname] = lineno
-}
-func (labels *labels) AddEnd(labelname string, lineno int) {
-	labels.endmap[labelname] = lineno
-}
-func (labels *labels) RegisterNewLabel(lineno int) string {
-	s := "_" + strconv.Itoa(labels.tmplabel)
-	labels.AddGoto(s,lineno)
-	labels.AddComeFrom(s,lineno+1)
-	labels.tmplabel++
+
+func (l *labels) AddGoto(labelname string, lineno int)     { l.gotomap[labelname] = lineno }
+func (l *labels) AddComeFrom(labelname string, lineno int) { l.comemap[labelname] = lineno }
+func (l *labels) AddBegin(labelname string, lineno int)    { l.beginmap[labelname] = lineno }
+func (l *labels) AddEnd(labelname string, lineno int)      { l.endmap[labelname] = lineno }
+
+// RegisterNewLabel creates a temporary label pair for implicit blocks.
+func (l *labels) RegisterNewLabel(lineno int) string {
+	s := "_" + strconv.Itoa(l.tmplabel)
+	l.AddGoto(s, lineno)
+	l.AddComeFrom(s, lineno+1)
+	l.tmplabel++
 	return s
 }
