@@ -1,0 +1,74 @@
+begin main
+set #n M[0]
+set #r M[1]
+$tmp0 += 5
+n += tmp0
+$tmp0 -= 5
+set $n@0 n
+set $r@0 r
+call stri
+unset $r@0 r
+unset $n@0 n
+end main
+begin stri
+lock n
+$tmp1 += n
+$tmp2 += 0
+$tmp3 += tmp1 <= tmp2
+tmp3 -> l0;l1
+l0 <-
+$tmp3 -= tmp1 <= tmp2
+$tmp2 -= 0
+$tmp1 -= n
+unlock n
+lock n
+$tmp11 += n
+$tmp12 += 0
+$tmp13 += tmp11 <= tmp12
+-> l2
+l1 <-
+$tmp3 -= tmp1 <= tmp2
+$tmp2 -= 0
+$tmp1 -= n
+unlock n
+push
+lock n
+$tmp4 += n
+$tmp5 += 1
+$tmp6 += tmp4 - tmp5
+$l += tmp6
+$tmp6 -= tmp4 - tmp5
+$tmp5 -= 1
+$tmp4 -= n
+unlock n
+set $n@0 l
+set $r@0 r
+call stri
+unset $r@0 r
+unset $n@0 l
+lock n
+$tmp7 += n
+r += tmp7
+$tmp7 -= n
+unlock n
+lock n
+$tmp8 += n
+$tmp9 += 1
+$tmp10 += tmp8 - tmp9
+$l -= tmp10
+$tmp10 -= tmp8 - tmp9
+$tmp9 -= 1
+$tmp8 -= n
+unlock n
+pop
+lock n
+$tmp11 += n
+$tmp12 += 0
+$tmp13 += tmp11 <= tmp12
+-> l3
+l2;l3 <- tmp13
+$tmp13 -= tmp11 <= tmp12
+$tmp12 -= 0
+$tmp11 -= n
+unlock n
+end stri

@@ -1,0 +1,96 @@
+begin main
+set #n M[0]
+set #r M[1]
+$tmp0 += 9
+n += tmp0
+$tmp0 -= 10
+set $n@0 n
+set $r@0 r
+call fib
+unset $r@0 r
+unset $n@0 n
+end main
+begin fib
+lock n
+$tmp1 += n
+$tmp2 += 2
+$tmp3 += tmp1 <= tmp2
+tmp3 -> l0;l1
+l0 <-
+$tmp3 -= tmp1 <= tmp2
+$tmp2 -= 2
+$tmp1 -= n
+unlock n
+$tmp4 += 1
+r += tmp4
+$tmp4 -= 1
+lock n
+$tmp17 += n
+$tmp18 += 2
+$tmp19 += tmp17 <= tmp18
+-> l2
+l1 <-
+$tmp3 -= tmp1 <= tmp2
+$tmp2 -= 2
+$tmp1 -= n
+unlock n
+push
+lock n
+$tmp5 += n
+$tmp6 += 1
+$tmp7 += tmp5 - tmp6
+$l += tmp7
+$tmp7 -= tmp5 - tmp6
+$tmp6 -= 1
+$tmp5 -= n
+unlock n
+push
+lock n
+$tmp8 += n
+$tmp9 += 2
+$tmp10 += tmp8 - tmp9
+$m += tmp10
+$tmp10 -= tmp8 - tmp9
+$tmp9 -= 2
+$tmp8 -= n
+unlock n
+set $n@0 l
+set $r@0 r
+set $n@1 m
+set $r@1 r
+call fib, fib
+unset $r@1 r
+unset $n@1 m
+unset $r@0 r
+unset $n@0 l
+lock n
+$tmp11 += n
+$tmp12 += 2
+$tmp13 += tmp11 - tmp12
+$m -= tmp13
+$tmp13 -= tmp11 - tmp12
+$tmp12 -= 2
+$tmp11 -= n
+unlock n
+pop
+lock n
+$tmp14 += n
+$tmp15 += 1
+$tmp16 += tmp14 - tmp15
+$l -= tmp16
+$tmp16 -= tmp14 - tmp15
+$tmp15 -= 1
+$tmp14 -= n
+unlock n
+pop
+lock n
+$tmp17 += n
+$tmp18 += 2
+$tmp19 += tmp17 <= tmp18
+-> l3
+l2;l3 <- tmp19
+$tmp19 -= tmp17 <= tmp18
+$tmp18 -= 2
+$tmp17 -= n
+unlock n
+end fib

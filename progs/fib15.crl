@@ -3,7 +3,7 @@ set #n M[0]
 set #r M[1]
 $tmp0 += 15
 n += tmp0
-$tmp0 -= 15
+$tmp0 -= 10
 set $n@0 n
 set $r@0 r
 call fib
