@@ -144,7 +144,11 @@ func readStdin(debugsym chan<- string, done <-chan bool) {
 			return
 		default:
 			r, err := in.ReadString('\n')
-			checkerr(err)
+			if err != nil {
+				// Treat EOF as graceful termination so batch runs that
+				// redirect from /dev/null can proceed without panicking.
+				return
+			}
 			debugsym <- r
 		}
 	}

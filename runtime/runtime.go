@@ -190,8 +190,16 @@ func (r *runtime) debug(debugsym chan string, done chan bool) {
 						case 1:
 							debugsym <- "fwd\n"
 						default:
-							close(done)
-							return
+							// Auto sequence complete. close(done) alone may not
+							// terminate the process when readStdin is blocked on
+							// a stdin pipe that never sends bytes; force exit.
+							if cfg.Profile {
+								pprof.StopCPUProfile()
+							}
+							if cfg.Tracing {
+								trace.Stop()
+							}
+							os.Exit(0)
 						}
 						cfg.AutoProgress++
 						time.Sleep(1 * time.Second)
